@@ -1,131 +1,74 @@
 const express = require("express");
-const app = express();
 const bodyParser = require("body-parser");
 const compiler = require("compilex");
-const fs = require("fs");
+const path = require("path");
 
-// Initialize the compiler with options
-const options = { stats: true };
+// Initialize the Express app
+const app = express();
+
+// Initialize the compiler with options for Vercel
+const options = {
+    stats: true,
+    tempDir: "/tmp", // Use Vercel's writable directory
+};
 compiler.init(options);
 
 // Use the body-parser middleware to parse JSON data
 app.use(bodyParser.json());
 
-// Define a function to clean up temporary files
-function cleanTemporaryFiles() {
-    // Replace the path with the actual directory containing temporary files
-    const tempDirectory = __dirname + "/temp";
-
-    // Read the files in the temporary directory
-    fs.readdir(tempDirectory, (err, files) => {
-        if (err) {
-            console.error("Error reading temporary directory:", err);
-            return;
-        }
-
-        // Loop through files in the temporary directory and delete them
-        files.forEach((file) => {
-            const filePath = `${tempDirectory}/${file}`;
-
-            fs.unlink(filePath, (err) => {
-                if (err) {
-                    console.error(`Error deleting file ${filePath}:`, err);
-                } else {
-                    console.log(`Deleted file: ${filePath}`);
-                }
-            });
-        });
-    });
-}
-
 // Define a route for the root URL
-app.get("/", function (req, res) {
-    // Clean up temporary files on startup
-    cleanTemporaryFiles();
-
-    // Send the HTML file as the response
-    res.sendFile(__dirname + "/index.html");
+app.get("/", (req, res) => {
+    res.send("Code Compiler API is running");
 });
 
 // Define a route for code compilation
-app.post("/compile", function (req, res) {
-    // Extract code, input, and language from the request
-    const code = req.body.code;
-    const input = req.body.input;
-    const lang = req.body.lang;
+app.post("/compile", (req, res) => {
+    const { code, input, lang } = req.body;
 
     try {
-        // Compile code based on the selected language
-        if (lang === "Cpp") {
-            const envData = { OS: "windows", cmd: "g++" , options: { timeout: 10000 } };
+        // Handle different languages
+        if (lang === "Cpp" || lang === "C") {
+            const envData = { OS: "linux", cmd: "g++", options: { timeout: 10000 } };
 
             if (!input) {
-                compiler.compileCPP(envData, code, function (data) {
-                    if (data.output) {
-                        res.send(data);
-                    } else {
-                        res.send({ output: "error" });
-                    }
-                });
+                compiler.compileCPP(envData, code, (data) => res.send(data.output ? data : { output: "error" }));
             } else {
-                compiler.compileCPPWithInput(envData, code, input, function (data) {
-                    if (data.output) {
-                        res.send(data);
-                    } else {
-                        res.send({ output: "error" });
-                    }
-                });
+                compiler.compileCPPWithInput(envData, code, input, (data) => res.send(data.output ? data : { output: "error" }));
             }
         } else if (lang === "Java") {
-            const envData = { OS: "windows" };
+            const envData = {
+                OS: "linux",
+                options: { timeout: 10000 },
+                path: "/tmp", // Ensure temp files are stored in a writable directory
+            };
 
             if (!input) {
-                compiler.compileJava(envData, code, function (data) {
-                    if (data.output) {
-                        res.send(data);
-                    } else {
-                        res.send({ output: "error" });
-                    }
+                compiler.compileJava(envData, code, (data) => {
+                    res.send(data.error ? { output: "error", error: data.error } : data);
                 });
             } else {
-                compiler.compileJavaWithInput(envData, code, input, function (data) {
-                    if (data.output) {
-                        res.send(data);
-                    } else {
-                        res.send({ output: "error" });
-                    }
+                compiler.compileJavaWithInput(envData, code, input, (data) => {
+                    res.send(data.error ? { output: "error", error: data.error } : data);
                 });
             }
         } else if (lang === "Python") {
-            const envData = { OS: "windows" };
+            const envData = { OS: "linux" };
 
             if (!input) {
-                compiler.compilePython(envData, code, function (data) {
-                    if (data.output) {
-                        res.send(data);
-                    } else {
-                        res.send({ output: "error" });
-                    }
-                });
+                compiler.compilePython(envData, code, (data) => res.send(data.output ? data : { output: "error" }));
             } else {
-                compiler.compilePythonWithInput(envData, code, input, function (data) {
-                    if (data.output) {
-                        res.send(data);
-                    } else {
-                        res.send({ output: "error" });
-                    }
-                });
+                compiler.compilePythonWithInput(envData, code, input, (data) => res.send(data.output ? data : { output: "error" }));
             }
+        } else {
+            res.status(400).send({ error: "Unsupported language" });
         }
-    } catch (e) {
-        console.error("Error:", e);
-    } finally {
-        // Clean up temporary files after compilation
-        cleanTemporaryFiles();
+    } catch (error) {
+        console.error("Compilation Error:", error);
+        res.status(500).send({ error: "Internal Server Error" });
     }
 });
 
-// Start the server on port 8000
-app.listen(process.env.PORT||8000, function () {
-    console.log("Server is running on port 8000");
+// Start the server (Vercel sets the port automatically)
+app.listen(3000, () => {
+    console.log("Server is running on port 3000");
 });
